@@ -1,0 +1,52 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Environment variables
+.env
+*.env
+
+# YOLO model weights (large binary files — download separately)
+*.pt
+*.pth
+*.weights
+
+# Tracked output videos generated at runtime
+tracked_video_*.mp4
+
+# Temporary files generated during processing
+temp_*.mp4
+temp_*.csv
+
+# Streamlit cache
+.streamlit/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter notebooks (not part of this project)
+*.ipynb
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
