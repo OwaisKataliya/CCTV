@@ -12,7 +12,6 @@ from tracker.config import (
     HIGH_CONF_THR,
     LOW_CONF_THR,
     REID_STRICT_THRESH,
-    REID_CENTER_MAX_DIST,
     IOU_THR,
     MAX_AGE,
     MIN_HITS_TO_CONFIRM,
@@ -49,10 +48,6 @@ def render_sidebar() -> dict:
             "ReID Strict Threshold", 0.1, 1.0, REID_STRICT_THRESH, 0.05,
             help="Max cosine distance to accept a ReID-based re-attachment.",
         )
-        reid_center_max_dist = st.number_input(
-            "ReID Max Center Distance (px)", 50, 500, REID_CENTER_MAX_DIST, 10,
-            help="Max pixel distance between track and detection center for ReID.",
-        )
 
         st.subheader("Tracking")
         iou_thresh = st.slider(
@@ -82,7 +77,6 @@ def render_sidebar() -> dict:
         "high_conf_thresh"    : high_conf_thresh,
         "low_conf_thresh"     : low_conf_thresh,
         "reid_strict_thresh"  : reid_strict_thresh,
-        "reid_center_max_dist": reid_center_max_dist,
         "iou_thresh"          : iou_thresh,
         "max_age"             : max_age,
         "min_hits"            : min_hits,

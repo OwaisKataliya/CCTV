@@ -177,13 +177,15 @@ def run_tracking_pipeline(uploaded_video, settings: dict):
                 if tr.retired:
                     continue
 
-                color = (
-                    int((tid * 37) % 255),
-                    int((tid * 97) % 255),
-                    int((tid * 61) % 255),
-                )
+                # Generate a bright, saturated track color (avoid near-black)
+                r_c = int((tid * 37) % 205) + 50
+                g_c = int((tid * 97) % 205) + 50
+                b_c = int((tid * 61) % 205) + 50
+                color = (r_c, g_c, b_c)
+
                 box             = [int(round(v)) for v in tr.smoothed_box]
                 x1, y1, x2, y2 = box
+                box_h = y2 - y1
 
                 if tr.confirmed:
                     live_confirmed += 1
@@ -194,15 +196,30 @@ def run_tracking_pipeline(uploaded_video, settings: dict):
                         (x1, max(12, y1 - 6)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2,
                     )
+
                     # Draw horizontal part division lines inside the box
-                    part_h = max(2, (y2 - y1) // NUM_PARTS)
-                    for i in range(1, NUM_PARTS):
-                        cv2.line(
-                            show_frame,
-                            (x1, y1 + i * part_h),
-                            (x2, y1 + i * part_h),
-                            color, 1,
+                    # Only draw when the box is tall enough for lines to be visible
+                    if box_h >= 40 and NUM_PARTS > 1:
+                        part_h = box_h // NUM_PARTS
+                        # Bright contrasting tint for part lines
+                        line_color = (
+                            min(255, r_c + 80),
+                            min(255, g_c + 80),
+                            min(255, b_c + 80),
                         )
+                        for i in range(1, NUM_PARTS):
+                            line_y = y1 + i * part_h
+                            # Draw a thin dark outline + bright line for contrast
+                            cv2.line(
+                                show_frame,
+                                (x1 + 1, line_y), (x2 - 1, line_y),
+                                (0, 0, 0), 3,
+                            )
+                            cv2.line(
+                                show_frame,
+                                (x1 + 1, line_y), (x2 - 1, line_y),
+                                line_color, 2,
+                            )
                 else:
                     # Unconfirmed track: thin gray box, no label
                     cv2.rectangle(show_frame, (x1, y1), (x2, y2), (180, 180, 180), 1)

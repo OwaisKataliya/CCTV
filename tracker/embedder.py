@@ -66,11 +66,13 @@ class PartEmbedder:
             box:   Detection box [x1, y1, x2, y2].
 
         Returns:
-            List of L2-normalized 2048D numpy arrays (one per body part).
-            Returns a single random vector on failure.
+            List of exactly self.num_parts L2-normalized 2048D numpy arrays.
+            Uses random fallback vectors for parts that cannot be extracted.
         """
+        _rand = lambda: l2_normalize_vec(np.random.rand(2048).astype(np.float32))
+
         if not self.available:
-            return [np.random.rand(2048).astype(np.float32)]
+            return [_rand() for _ in range(self.num_parts)]
 
         try:
             h, w = frame.shape[:2]
@@ -79,7 +81,7 @@ class PartEmbedder:
             y1, y2 = max(0, y1), min(h - 1, y2)
 
             if (x2 - x1) < 8 or (y2 - y1) < 8:
-                return [np.random.rand(2048).astype(np.float32)]
+                return [_rand() for _ in range(self.num_parts)]
 
             box_h  = y2 - y1
             part_h = max(1, box_h // self.num_parts)
@@ -92,6 +94,7 @@ class PartEmbedder:
                     crop = frame[py1:py2, x1:x2]
 
                     if crop.size == 0:
+                        parts.append(_rand())
                         continue
 
                     crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
@@ -100,14 +103,15 @@ class PartEmbedder:
                     feat     = feat.view(feat.shape[0], -1).cpu().numpy().reshape(-1)
 
                     if feat.size == 0:
+                        parts.append(_rand())
                         continue
 
                     parts.append(l2_normalize_vec(feat))
 
-            return parts if parts else [np.random.rand(2048).astype(np.float32)]
+            return parts if len(parts) == self.num_parts else parts + [_rand() for _ in range(self.num_parts - len(parts))]
 
         except Exception:
-            return [np.random.rand(2048).astype(np.float32)]
+            return [_rand() for _ in range(self.num_parts)]
 
     def compute_weighted_mean(
         self,

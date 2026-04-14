@@ -37,12 +37,15 @@ from tracker.config import (
     IOU_THR,
     REID_STRICT_THRESH,
     REID_REATTACH_MAX_AGE,
-    REID_CENTER_MAX_DIST,
+    REID_CENTER_MAX_DIST_BASE,
+    VELOCITY_GATE_MULTIPLIER,
     REID_AREA_RATIO_MAX,
     MATCH_WEIGHT_IOU,
     MATCH_WEIGHT_REID,
+    MATCH_WEIGHT_DIRECTION,
+    DIRECTION_SPEED_THRESH,
     FALLBACK_IOU_FOR_NEW,
-    FALLBACK_CENTER_MAX_DIST,
+    FALLBACK_CENTER_MAX_DIST_BASE,
     MAX_FALLBACK_MISSES,
     MAX_AGE,
     MIN_HITS_TO_CONFIRM,
@@ -146,6 +149,12 @@ class PersonReIDTracker:
                 tr.exit_time = datetime.now()
                 self.gallery.save(tr, frame_idx)
                 del self.tracks[tid]
+                continue
+
+            # Retire static objects (posters, signs, etc.) — don't save to gallery
+            if tr.is_static:
+                del self.tracks[tid]
+                continue
 
         track_ids = list(self.tracks.keys())
         N = len(track_ids)
@@ -163,6 +172,11 @@ class PersonReIDTracker:
             tr     = self.tracks[tid]
             tr_emb = tr.get_average_embedding()
 
+            tr_vx = float(tr.x[4])
+            tr_vy = float(tr.x[5])
+            speed = math.hypot(tr_vx, tr_vy)
+            tr_cx, tr_cy = center_of(tr.smoothed_box)
+
             for j in range(M):
                 det_box   = detections[j]
                 det_parts = parts_features[j]
@@ -174,7 +188,21 @@ class PersonReIDTracker:
                     dists     = [cosine_distance_vec(tr_emb, p) for p in det_parts]
                     reid_cost = float(min(dists))
 
-                cost[i, j] = MATCH_WEIGHT_IOU * iou_cost + MATCH_WEIGHT_REID * reid_cost
+                direction_cost = 0.0
+                if speed >= DIRECTION_SPEED_THRESH:
+                    det_cx, det_cy = center_of(det_box)
+                    dx = det_cx - tr_cx
+                    dy = det_cy - tr_cy
+                    dist = math.hypot(dx, dy)
+                    if dist > 0:
+                        cos_angle = (tr_vx * dx + tr_vy * dy) / (speed * dist)
+                        # cos_angle ranges from 1 (same dir) to -1 (opposite)
+                        # direction_cost ranges from 0 (same dir) to 1 (opposite)
+                        direction_cost = (1.0 - cos_angle) / 2.0
+
+                cost[i, j] = (MATCH_WEIGHT_IOU * iou_cost + 
+                              MATCH_WEIGHT_REID * reid_cost + 
+                              MATCH_WEIGHT_DIRECTION * direction_cost)
 
         # ----------------------------------------------------------
         # Steps 5-6: Hungarian assignment + acceptance gating
@@ -205,6 +233,10 @@ class PersonReIDTracker:
                 tcx, tcy      = center_of(tr.box)
                 dcx, dcy      = center_of(det_box)
                 center_dist   = math.hypot(tcx - dcx, tcy - dcy)
+                
+                speed = math.hypot(float(tr.x[4]), float(tr.x[5]))
+                dynamic_max_dist = REID_CENTER_MAX_DIST_BASE + (VELOCITY_GATE_MULTIPLIER * speed * tr.time_since_update)
+
                 tarea         = max(1.0, box_area(tr.box))
                 darea         = max(1.0, box_area(det_box))
                 area_ratio    = max(tarea / darea, darea / tarea)
@@ -215,7 +247,7 @@ class PersonReIDTracker:
                     det_parts and
                     recent_enough and
                     best_reid   <= self.reid_strict_thresh and
-                    center_dist <= REID_CENTER_MAX_DIST and
+                    center_dist <= dynamic_max_dist and
                     area_ratio  <= REID_AREA_RATIO_MAX
                 )
 
@@ -260,7 +292,9 @@ class PersonReIDTracker:
                 tr       = self.tracks[best_tid]
                 tcx, tcy = center_of(tr.smoothed_box)
                 dcx, dcy = center_of(det_box)
-                if math.hypot(tcx - dcx, tcy - dcy) <= FALLBACK_CENTER_MAX_DIST:
+                speed    = math.hypot(float(tr.x[4]), float(tr.x[5]))
+                dynamic_fallback_dist = FALLBACK_CENTER_MAX_DIST_BASE + (VELOCITY_GATE_MULTIPLIER * speed * tr.time_since_update)
+                if math.hypot(tcx - dcx, tcy - dcy) <= dynamic_fallback_dist:
                     tr.update(det_box, parts_features[di], frame_idx)
                     fallback_attached.add(di)
 

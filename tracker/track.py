@@ -26,6 +26,9 @@ from tracker.config import (
     SMOOTH_ALPHA_SLOW,
     SMOOTH_ALPHA_FAST,
     EXIT_MARGIN,
+    STATIC_VELOCITY_THRESH,
+    STATIC_DISPLACEMENT_THRESH,
+    STATIC_FRAMES_REQUIRED,
 )
 from tracker.kalman import KalmanBox
 from tracker.utils import (
@@ -82,6 +85,13 @@ class Track:
         self.kf     = KalmanBox(dt=dt)
         xywh        = box_xyxy_to_xywh(self.box)
         self.x, self.P = self.kf.initiate(xywh)
+
+        # Static object detection state
+        init_center = center_of(init_box)
+        self._center_history: deque = deque(maxlen=STATIC_FRAMES_REQUIRED)
+        self._center_history.append(init_center)
+        self._consecutive_static: int = 0
+        self._marked_static: bool     = False
 
         # Timestamps for analytics
         self.entry_time: datetime        = datetime.now()
@@ -141,8 +151,14 @@ class Track:
         self.age              += 1
         self.last_update_frame = frame_idx
 
+        # Record center for displacement-based static detection
+        self._center_history.append(center_of(detected_box))
+        self._update_static_state()
+
         if not self.confirmed and self.hits >= MIN_HITS_TO_CONFIRM:
-            self.confirmed = True
+            # Block confirmation for static objects (posters, signs, etc.)
+            if not self._marked_static:
+                self.confirmed = True
 
         # Status reflects current confirmed state, not just the update event
         self.status = "Confirmed" if self.confirmed else "Tracked"
@@ -186,6 +202,49 @@ class Track:
             mean = np.mean(arr, axis=0)
 
         return l2_normalize_vec(mean)
+
+    # ------------------------------------------------------------------
+    # Static object detection
+    # ------------------------------------------------------------------
+
+    @property
+    def is_static(self) -> bool:
+        """True if this track has been classified as a static object."""
+        return self._marked_static
+
+    def _update_static_state(self):
+        """
+        Hybrid static detection using both Kalman velocity and displacement.
+
+        A track is considered instantaneously static when:
+          1. Kalman velocity magnitude < STATIC_VELOCITY_THRESH, AND
+          2. Displacement from oldest stored center < STATIC_DISPLACEMENT_THRESH.
+
+        Once this holds for STATIC_FRAMES_REQUIRED consecutive updates,
+        the track is permanently marked as static.
+        """
+        # Solution 2: Kalman velocity check
+        vx    = abs(float(self.x[4]))
+        vy    = abs(float(self.x[5]))
+        speed = math.hypot(vx, vy)
+        velocity_static = speed < STATIC_VELOCITY_THRESH
+
+        # Solution 1: Displacement check over the observation window
+        if len(self._center_history) >= 2:
+            oldest = self._center_history[0]
+            newest = self._center_history[-1]
+            displacement = math.hypot(newest[0] - oldest[0], newest[1] - oldest[1])
+            displacement_static = displacement < STATIC_DISPLACEMENT_THRESH
+        else:
+            displacement_static = False
+
+        if velocity_static and displacement_static:
+            self._consecutive_static += 1
+        else:
+            self._consecutive_static = 0
+
+        if self._consecutive_static >= STATIC_FRAMES_REQUIRED:
+            self._marked_static = True
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -4,8 +4,7 @@ results.py
 Renders the results panel on the right column of the main layout.
 
 Displays four tabs:
-  1. Video Download  — download the annotated output video
-  2. CSV Data        — view and download the tracking log table
+  1. Video Output   — play and download the annotated output video
   3. Analytics       — summary metrics and status distribution chart
   4. Algorithm Info  — description of the tracking pipeline
 """
@@ -17,16 +16,15 @@ from tracker.config import EMBED_CACHE_SIZE
 
 
 def render_results():
-    """
-    Render the right-column results area based on session state.
+    """Render the right-hand results panel with tabs.
 
-    Reads from:
-        st.session_state.processing    — True while tracking is running
-        st.session_state.err_message   — Error string, or None on success
-        st.session_state.output_video  — Path to output video file
-        st.session_state.tracking_data — DataFrame with tracking logs
+    Uses values stored in st.session_state by the uploader/pipeline:
+      - output_video: path to the tracked output MP4
+      - tracking_data: pandas DataFrame with per-track summary
+      - err_message: optional error string
+      - processing: bool flag while pipeline is running
     """
-    st.header("Results and Analytics")
+    st.header("Results")
 
     processing    = st.session_state.get("processing", False)
     err_message   = st.session_state.get("err_message")
@@ -34,54 +32,55 @@ def render_results():
     tracking_data = st.session_state.get("tracking_data")
 
     if processing:
-        st.info("Processing in progress...")
+        st.info("Tracking is running… please wait for completion.")
         return
 
     if err_message:
-        st.error(f"Error: {err_message}")
-        with st.expander("Troubleshooting"):
-            st.markdown("""
-**Common causes:**
-- Video format not supported (use MP4)
-- Missing model file `yolo11m.pt` in working directory
+        st.error(err_message)
+        with st.expander("Troubleshooting tips", expanded=False):
+            st.markdown(
+                """
+Possible causes:
 - Insufficient GPU memory (try CPU mode)
 - torchvision / PyTorch version mismatch
+- Unsupported or corrupt input video
+"""
+            )
 
-**Solutions:**
-1. Convert video to MP4 format
-2. Ensure `yolo11m.pt` exists in the project folder
-3. Reduce video resolution or length
-4. Update PyTorch and torchvision
-""")
+    # No results yet
+    if not output_video and tracking_data is None:
+        st.info("No results yet. Upload a video and start tracking from the left panel.")
         return
 
-    if output_video and tracking_data is not None:
-        tab1, tab2, tab3, tab4 = st.tabs(
-            ["Video Download", "CSV Data", "Analytics", "Algorithm Info"]
-        )
+    tab_video, tab_csv, tab_analytics, tab_info = st.tabs(
+        ["Video Output", "Tracking Logs", "Analytics", "Algorithm Info"]
+    )
 
-        with tab1:
-            _render_video_tab(output_video)
+    with tab_video:
+        _render_video_tab(output_video)
 
-        with tab2:
+    with tab_csv:
+        if tracking_data is not None:
             _render_csv_tab(tracking_data)
+        else:
+            st.info("No tracking logs available yet.")
 
-        with tab3:
+    with tab_analytics:
+        if tracking_data is not None:
             _render_analytics_tab(tracking_data)
+        else:
+            st.info("Run tracking to see analytics.")
 
-        with tab4:
-            _render_info_tab()
+    with tab_info:
+        _render_info_tab()
 
-    else:
-        st.info("Upload a video and click 'Start Tracking' to begin.")
-
-
-# ------------------------------------------------------------------
-# Tab renderers
-# ------------------------------------------------------------------
 
 def _render_video_tab(output_video: str):
     st.subheader("Annotated Tracked Video")
+
+    if not output_video:
+        st.info("Run tracking to generate the annotated output video.")
+        return
 
     if st.checkbox("Show debug info"):
         st.write(f"Session path: `{output_video}`")
@@ -95,23 +94,31 @@ def _render_video_tab(output_video: str):
         with open(output_video, "rb") as f:
             video_bytes = f.read()
 
-        st.download_button(
-            "Download Tracked Video",
-            data=video_bytes,
-            file_name="tracked_output.mp4",
-            mime="video/mp4",
-            use_container_width=True,
-            type="primary",
-        )
-        size_mb = len(video_bytes) / (1024 * 1024)
-        st.success("Video ready for download.")
-        st.info(f"Size: {size_mb:.1f} MB")
-        st.markdown("""
-**Output video contains:**
-- Part-based ReID: 3-part feature extraction per person
-- Kalman filtering: smooth motion prediction
-- Hungarian assignment: globally optimal track-detection matching
-- Gallery re-identification: returning persons keep their original ID
+        # ---- Download button ----
+        st.markdown("#### ⬇ Download")
+        col_dl, col_info = st.columns([2, 1])
+        with col_dl:
+            st.download_button(
+                "Download Tracked Video",
+                data=video_bytes,
+                file_name="tracked_output.mp4",
+                mime="video/mp4",
+                width="stretch",
+                type="primary",
+            )
+        with col_info:
+            size_mb = len(video_bytes) / (1024 * 1024)
+            st.metric("File Size", f"{size_mb:.1f} MB")
+
+        st.divider()
+
+        with st.expander("What's in this video?", expanded=False):
+            st.markdown("""
+- **Part-based ReID:** 3-part feature extraction per person
+- **Kalman filtering:** smooth motion prediction
+- **Hungarian assignment:** globally optimal track-detection matching
+- **Gallery re-identification:** returning persons keep their original ID
+- **Static object filtering:** posters and signs are suppressed
 - Part division lines visible on each confirmed track
 - Frame-level stats in the top-left corner
 """)
@@ -128,14 +135,14 @@ Possible causes:
 
 def _render_csv_tab(tracking_data):
     st.subheader("Tracking Logs")
-    st.dataframe(tracking_data, use_container_width=True)
+    st.dataframe(tracking_data, width="stretch")
     csv_data = tracking_data.to_csv(index=False)
     st.download_button(
         "Download CSV",
         data=csv_data,
         file_name="tracking_logs.csv",
         mime="text/csv",
-        use_container_width=True,
+        width="stretch",
         type="primary",
     )
 

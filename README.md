@@ -25,6 +25,8 @@ Standard object trackers fail under real-world surveillance conditions. Occlusio
 **Core capabilities:**
 - Consistent person IDs throughout the video, even across occlusions
 - Re-identification of returning persons using a persistent Track Gallery
+- **Fast-motion handling:** Dynamic search radiuses and momentum-based direction consistency
+- **Static object filtering:** Automatically detects and ignores non-moving human-like objects (e.g. posters/mannequins)
 - All parameters tunable live via a Streamlit sidebar — no code changes needed
 - Modular codebase: tracking logic and UI are fully separated
 
@@ -80,11 +82,11 @@ Position is predicted from previous position + estimated velocity. This produces
 ### Step 4 — Cost Matrix Construction
 An N × M cost matrix is built for all (track, detection) pairs:
 ```
-cost[i, j] = 0.4 × (1 - IoU) + 0.6 × ReID_cosine_distance
+cost[i, j] = 0.3 × (1 - IoU) + 0.5 × ReID_cosine_distance + 0.2 × Direction_penalty
 ```
 - **IoU** measures spatial overlap between predicted track box and detection box.
 - **ReID cosine distance** is the minimum cosine distance between the track's average embedding and the detection's part embeddings.
-- Weights (0.4 / 0.6) make appearance the dominant signal while IoU prevents absurd spatial assignments.
+- **Direction penalty** heavily penalizes detections that contradict the predicted momentum path of fast-moving tracks (shutting down ID-swaps during crowded occlusions).
 
 ### Step 5 — Hungarian Assignment
 The **Hungarian algorithm** (via `scipy.optimize.linear_sum_assignment`) solves the cost matrix globally. Each track and detection is assigned at most once. Global optimization means the system won't greedily assign a track to its locally best detection if doing so results in a worse total assignment.
@@ -92,9 +94,9 @@ The **Hungarian algorithm** (via `scipy.optimize.linear_sum_assignment`) solves 
 ### Step 6 — Acceptance Gating
 Each proposed assignment from Step 5 is accepted only if one of these conditions is true:
 - `IoU >= iou_thr` (direct spatial match), **OR**
-- All of: ReID cosine distance below strict threshold + center distance within limit + area ratio within limit + track was lost recently enough
+- All of: ReID cosine distance below strict threshold + center distance within limits set by **Velocity-Based Dynamic Gating** (search radius scales up if the object is moving fast and was lost for multiple frames) + area ratio within limit + track was lost recently enough
 
-This two-path acceptance means IoU handles normal continuous tracking, while ReID handles recovery from missed detections.
+This two-path acceptance means IoU handles normal continuous tracking, while ReID (paired with physics-based prediction) handles recovery from missed detections.
 
 ### Step 7 — Track Update
 Accepted matches trigger a **Kalman correction** (measurement update) on the track. The bounding box is further refined with **adaptive exponential smoothing**:
@@ -111,7 +113,7 @@ Still-unmatched detections query the **Track Gallery** (see below). If a retired
 Detections that survived all previous steps become new tracks. A detection that overlaps a confirmed active track by more than 0.45 IoU is ignored to prevent ghost tracks.
 
 ### Step 11 — Track Retirement
-Tracks exceeding `MAX_AGE` (default 150) frames without a match are retired. Before deletion, they are saved to the Track Gallery. Boundary-exit retirement (when the predicted center is consistently outside the frame) is handled separately in Step 3.
+Tracks exceeding `MAX_AGE` (default 150) frames without a match are retired. Before deletion, they are saved to the Track Gallery. Boundary-exit retirement (when the predicted center is consistently outside the frame) is handled separately in Step 3. **Static tracks** (posters/signs detected via Kalman velocity and positional displacement) are silently deleted here and never enter the gallery or receive confirmed IDs.
 
 ---
 
@@ -197,11 +199,21 @@ venv\Scripts\activate
 
 ### 3. Install dependencies
 
+Because PyTorch installation is heavily dependent on hardware (CPU vs GPU), you **must** install it first before running the requirements script.
+
+#### Option A: GPU Environment (Recommended for speed)
+*Requires an NVIDIA GPU.* Ensure you have a conda environment active (e.g., `conda activate cctv_gpu`).
 ```bash
+pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121
 pip install -r requirements.txt
 ```
 
-> **GPU support:** For CUDA-accelerated inference, install the correct PyTorch build for your CUDA version **before** the above command. See https://pytorch.org/get-started/locally/
+#### Option B: CPU-Only Environment (For local testing without GPU)
+Ensure you have a conda environment active (e.g., `conda activate cctv`).
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements.txt
+```
 
 ### 4. Download the YOLO model
 
@@ -235,12 +247,12 @@ All parameters are defined in `tracker/config.py` and exposed as live controls i
 | Parameter | Default | Description |
 |---|---|---|
 | `IOU_THR` | 0.30 | Minimum IoU for direct track-detection match |
-| `MATCH_WEIGHT_IOU` | 0.4 | Weight of spatial cost in assignment matrix |
-| `MATCH_WEIGHT_REID` | 0.6 | Weight of appearance cost in assignment matrix |
-| `REID_STRICT_THRESH` | 0.45 | Max cosine distance for ReID-based re-attachment |
-| `REID_REATTACH_MAX_AGE` | 30 | Track must have been lost within this many frames for ReID re-attach |
-| `REID_CENTER_MAX_DIST` | 160 | Max pixel distance for ReID spatial gate |
-| `REID_AREA_RATIO_MAX` | 2.5 | Max area ratio for ReID spatial gate |
+| `MATCH_WEIGHT_IOU` | 0.3 | Weight of spatial cost in assignment matrix |
+| `MATCH_WEIGHT_REID` | 0.5 | Weight of appearance cost in assignment matrix |
+| `MATCH_WEIGHT_DIRECTION` | 0.2 | Weight of motion trajectory penalty in assignment matrix |
+| `DIRECTION_SPEED_THRESH` | 3.0 | Minimum pixels/frame to trigger direction penalty |
+| `VELOCITY_GATE_MULTIPLIER`| 1.5 | How much speed scales the reattachment search area |
+| `REID_CENTER_MAX_DIST_BASE`| 160 | Base pixel distance for ReID spatial gate |
 
 ### Track Lifecycle
 
@@ -265,9 +277,10 @@ All parameters are defined in `tracker/config.py` and exposed as live controls i
 
 ### Annotated Video (MP4)
 
-- Unique color-coded bounding box per confirmed track
+- Inline **HTML5 video playback** directly in the Streamlit browser UI (automatically transcoded to H.264).
+- Unique color-coded bounding box per confirmed track (bright, high-contrast)
 - Track ID label above each box
-- Horizontal lines dividing body parts (showing ReID feature regions)
+- Horizontal lines dividing body parts (showing ReID feature regions, visible only on medium-to-large objects)
 - Top-left overlay: frame count, live confirmed track count, current gallery size
 
 ### Tracking Log (CSV)

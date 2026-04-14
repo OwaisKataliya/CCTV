@@ -31,12 +31,10 @@ def render_uploader(settings: dict):
     )
 
     if uploaded_file:
-        st.subheader("Preview")
-        st.video(uploaded_file)
         st.info(f"File: {uploaded_file.name}")
         st.info(f"Size: {uploaded_file.size / (1024 * 1024):.1f} MB")
 
-        if st.button("Start Tracking", type="primary", use_container_width=True):
+        if st.button("Start Tracking", type="primary", width="stretch"):
             st.session_state.processing    = True
             st.session_state.err_message   = None
             st.session_state.output_video  = None
@@ -66,13 +64,13 @@ def render_uploader(settings: dict):
             data=csv_data,
             file_name="tracking_logs.csv",
             mime="text/csv",
-            use_container_width=True,
+                width="stretch",
         )
         st.info(f"CSV: {len(tracking_data)} records")
     else:
-        st.button("Download CSV", disabled=True, use_container_width=True)
+            st.button("Download CSV", disabled=True, width="stretch")
 
-    if st.button("Clean Temp Files", use_container_width=True):
+    if st.button("Clean Temp Files", width="stretch"):
         cleanup_temp_files()
         cleanup_old_tracked_videos()
         st.success("Temporary files cleaned.")

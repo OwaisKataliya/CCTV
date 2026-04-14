@@ -38,7 +38,7 @@ from tracker.config import (
     GALLERY_TTL_SECONDS,
     GALLERY_MAX_SIZE,
     GALLERY_MIN_HITS,
-    REID_CENTER_MAX_DIST,
+    REID_CENTER_MAX_DIST_BASE,
     REID_AREA_RATIO_MAX,
 )
 from tracker.utils import cosine_distance_vec, center_of, box_area
@@ -137,7 +137,7 @@ class TrackGallery:
 
             # Gate 2: Spatial — skip if last known center is too far
             ecx, ecy = entry['last_position']
-            if math.hypot(det_cx - ecx, det_cy - ecy) > REID_CENTER_MAX_DIST:
+            if math.hypot(det_cx - ecx, det_cy - ecy) > REID_CENTER_MAX_DIST_BASE:
                 continue
 
             # Gate 3: Area ratio — skip if box sizes are too different

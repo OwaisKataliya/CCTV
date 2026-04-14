@@ -19,21 +19,24 @@ NUM_PARTS        = 3      # Number of horizontal strips per person crop
 EMBED_CACHE_SIZE = 10     # Sliding window — max embeddings stored per active track
 
 # ---- Matching cost weights ----
-MATCH_WEIGHT_IOU  = 0.4
-MATCH_WEIGHT_REID = 0.6
+MATCH_WEIGHT_IOU       = 0.3
+MATCH_WEIGHT_REID      = 0.5
+MATCH_WEIGHT_DIRECTION = 0.2    # Weight for motion direction consistency
+DIRECTION_SPEED_THRESH = 3.0    # Minimum speed (px/frame) to start applying direction cost
 
 # ---- Active track matching thresholds ----
-IOU_THR               = 0.30   # Minimum IoU to accept a match directly
-REID_STRICT_THRESH    = 0.45   # Max cosine distance for ReID-based re-attachment
-REID_REATTACH_MAX_AGE = 30     # Track must have been lost within this many frames
-REID_CENTER_MAX_DIST  = 160    # Max pixel distance between track and detection centers
-REID_AREA_RATIO_MAX   = 2.5    # Max area ratio between track box and detection box
+IOU_THR                   = 0.30   # Minimum IoU to accept a match directly
+REID_STRICT_THRESH        = 0.45   # Max cosine distance for ReID-based re-attachment
+REID_REATTACH_MAX_AGE     = 30     # Track must have been lost within this many frames
+REID_CENTER_MAX_DIST_BASE = 160    # Base pixel distance for search radius
+VELOCITY_GATE_MULTIPLIER  = 1.5    # How much predicted distance expands the search radius
+REID_AREA_RATIO_MAX       = 2.5    # Max area ratio between track box and detection box
 
 # ---- Fallback IoU attach ----
 # Prevents premature new ID creation when overlap is moderate
-FALLBACK_IOU_FOR_NEW     = 0.18
-FALLBACK_CENTER_MAX_DIST = 160
-MAX_FALLBACK_MISSES      = 8    # Only consider tracks missed <= this many frames
+FALLBACK_IOU_FOR_NEW          = 0.18
+FALLBACK_CENTER_MAX_DIST_BASE = 160
+MAX_FALLBACK_MISSES           = 8    # Only consider tracks missed <= this many frames
 
 # ---- Track lifecycle ----
 MIN_HITS_TO_CONFIRM = 2     # Detections needed before a track is marked confirmed
@@ -52,9 +55,15 @@ EXIT_MARGIN         = 40    # Pixels outside frame boundary before counting as e
 EXIT_MIN_MISSES     = 3     # Consecutive outside-boundary predictions to retire track
 HARD_RETIRE_ON_EXIT = False # True = retire immediately on first outside-boundary prediction
 
+# ---- Static object filtering ----
+# Suppress tracks for non-moving objects (posters, signs, mannequins, etc.)
+STATIC_VELOCITY_THRESH    = 2.0   # Max Kalman velocity (px/frame) to consider "nearly zero"
+STATIC_DISPLACEMENT_THRESH = 8.0  # Max displacement (px) over the observation window
+STATIC_FRAMES_REQUIRED     = 45   # Consecutive static frames before classifying as static
+
 # ---- Track Gallery (persistent re-identification) ----
 GALLERY_COSINE_THRESH  = 0.38   # Max cosine distance for gallery re-attachment
 GALLERY_TTL_SECONDS    = 600    # Gallery entry expires after this many seconds (10 min)
-GALLERY_MAX_SIZE       = 100    # Maximum entries stored in gallery at any time
+GALLERY_MAX_SIZE       = 1000    # Maximum entries stored in gallery at any time
 GALLERY_MIN_HITS       = 2      # Track must have at least this many hits to be saved
 GALLERY_EVICT_INTERVAL = 300    # Run TTL eviction every N frames

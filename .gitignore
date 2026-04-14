@@ -20,6 +20,7 @@ env/
 
 # Tracked output videos generated at runtime
 tracked_video_*.mp4
+*_h264.mp4
 
 # Temporary files generated during processing
 temp_*.mp4
