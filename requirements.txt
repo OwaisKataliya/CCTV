@@ -3,7 +3,8 @@ streamlit>=1.56.0
 pandas>=2.3.3
 
 # Computer vision and video processing
-opencv-python>=4.13.0
+# Using headless version for cloud deployment (no GUI dependencies)
+opencv-python-headless>=4.13.0
 numpy>=2.0.1
 
 # Deep learning — detection and feature extraction
